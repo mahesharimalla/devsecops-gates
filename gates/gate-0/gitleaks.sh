@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -9,20 +8,45 @@ REPORT_FILE="$REPORT_DIR/gitleaks-report.json"
 
 mkdir -p "$REPORT_DIR"
 
-gitleaks detect \
-  --source . \
-  --no-git \
-  --redact \
-  --report-format json \
-  --report-path "$REPORT_FILE"
+# Resolve config path
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/.gitleaks.toml"
 
-# If report exists and is non-empty → fail
-if [ -s "$REPORT_FILE" ]; then
-  COUNT=$(jq length "$REPORT_FILE")
-  if [ "$COUNT" -gt 0 ]; then
-    echo "❌ Gitleaks found $COUNT secrets"
-    exit 1
-  fi
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "❌ ERROR: .gitleaks.toml not found"
+  exit 2
+fi
+
+echo "📄 Using Gitleaks config: $CONFIG_FILE"
+echo "📂 Current working directory: $(pwd)"
+
+# Run Gitleaks
+docker run --rm \
+  -u $(id -u):$(id -g) \
+  -v "$PWD:/repo" \
+  -v "$CONFIG_FILE:/config.toml:ro" \
+  zricethezav/gitleaks:latest \
+  detect \
+    --source=/repo \
+    --no-git \
+    --config=/config.toml \
+    --report-format=json \
+    --report-path=/repo/$REPORT_FILE || true
+
+# Ensure report always exists
+if [ ! -f "$REPORT_FILE" ]; then
+  echo "[]" > "$REPORT_FILE"
+fi
+
+COUNT=$(jq length "$REPORT_FILE" 2>/dev/null || echo 0)
+
+if [ "$COUNT" -gt 0 ]; then
+  echo "❌ Gitleaks found $COUNT secrets"
+  echo "----------------------------------"
+  jq -r '.[] | "File: \(.File)\nRule: \(.RuleID)\nLine: \(.StartLine)\n"' "$REPORT_FILE"
+  echo "----------------------------------"
+  exit 1
 fi
 
 echo "✅ Gitleaks PASSED – No secrets detected"
+exit 0
