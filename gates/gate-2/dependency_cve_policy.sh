@@ -105,4 +105,3 @@ echo "<h3 style=\"color:green;\">Gate Status: PASSED</h3>" >> $CUSTOM_HTML
 echo "</body></html>" >> $CUSTOM_HTML
 
 echo "✅ CVSS policy compliant"
-
